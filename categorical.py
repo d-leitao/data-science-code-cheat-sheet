@@ -1,5 +1,5 @@
+import numpy as np
 import pandas as pd
-from pandas.tseries import frequencies
 
 # dataset
 from sklearn.datasets import load_iris
@@ -8,7 +8,21 @@ X = df_import['data']
 y = df_import['target'].rename('y')
 df = pd.concat([X, y], axis=1)
 
-# --- VISUALIZATION & UNSUPERVISED METHODS
+# --- EXPLORATORY DATA ANALYSIS & UNSUPERVISED METHODS
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Class counts
+sns.countplot(x=y)
+plt.title('Class Frequency')
+plt.xlabel('class')
+plt.show()
+
+# Feature statistics by class
+class_stats = df.groupby('y').agg(['mean', 'std']).T
+class_stats.columns.name = 'feature'
+class_stats
 
 # Principal Component Analysis
 from sklearn.decomposition import PCA
@@ -17,8 +31,6 @@ X_PCA = pd.DataFrame(pca.fit_transform(X))
 X_PCA.columns = ['PC'+str(n+1) for n in range(X_PCA.shape[1])]
 
 # 2D Scatter Plot
-import matplotlib.pyplot as plt
-import seaborn as sns
 # palettes: https://seaborn.pydata.org/tutorial/color_palettes.html
 sns.scatterplot(
     data=pd.concat((X_PCA, y), axis=1),
@@ -38,7 +50,8 @@ k_means_clusters = k_means.fit_predict(X)
 
 # Split and Evaluation Function
 from sklearn.model_selection import train_test_split
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25)
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.25, stratify=y)
 
 from sklearn import metrics
 def evaluate(y_test, y_pred):
@@ -57,9 +70,10 @@ def evaluate(y_test, y_pred):
     
     avgs = res.mean(axis=0)
     weighted_avgs = [res.iloc[:,i].dot(res.iloc[:,0]) for i in range(res.shape[1])]
-    res = res.append(pd.Series(avgs, index=res.columns, name='Class Average'))
-    res = res.append(pd.Series(weighted_avgs, index=res.columns, name='Weighted Average'))
-    res = res.round(4)
+    res = (res
+        .append(pd.Series(avgs, index=res.columns, name='Class Average'))
+        .append(pd.Series(weighted_avgs, index=res.columns, name='Weighted Average'))
+        .round(4))
     res.loc[['Class Average', 'Weighted Average'],'Frequency'] = '-'
 
     print(res, end='\n\n')
@@ -71,14 +85,57 @@ def evaluate(y_test, y_pred):
 
 # Supervised Learning Models
 
+# Random Forest
 from sklearn.ensemble import RandomForestClassifier
 rf = RandomForestClassifier(n_estimators=200)
 rf.fit(X_train, y_train)
 rf_pred = rf.predict(X_test)
 evaluate(y_test=y_test, y_pred=rf_pred)
 
+# XGBoost
+from xgboost import XGBClassifier
+from sklearn.preprocessing import LabelEncoder
+from sklearn.model_selection import GridSearchCV 
+
+le = LabelEncoder() 
+y_train_le = le.fit_transform(y_train)
+
+param_grid = {
+    'gamma': [0.1, 0.2, 0.3],
+    'lambda': [0.4, 0.5, 0.6],
+    'learning_rate': [0.1, 0.15, 0.2],
+    'max_depth': [8, 10, 12]
+    }
+
+xgb = GridSearchCV(
+    estimator=XGBClassifier(use_label_encoder=False), 
+    param_grid=param_grid, cv=5)
+xgb.fit(X_train, y_train_le, eval_metric='mlogloss')
+cv_results = pd.DataFrame(xgb.cv_results_)
+cv_results.loc[:,
+    [c for c in cv_results.columns if c[0:6]=='param_'] +
+    ['mean_test_score', 'std_test_score']]
+xgb_pred = le.inverse_transform(xgb.predict(X_test))
+evaluate(y_test=y_test, y_pred=xgb_pred)
+
+# Neural Network
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from tensorflow.keras import Sequential, layers, optimizers, callbacks
+
+def plot_log_losses(history):
+    loss = np.array(history['loss'])
+    val_loss = np.array(history['val_loss'])
+
+    epochs = np.array(range(1, len(loss) + 1))
+
+    plt.plot(epochs, np.log(loss+10e-10), label='Training Loss') # smooth for 0
+    plt.plot(epochs, np.log(val_loss+10e-10), label='Validation Loss')
+    plt.legend(loc='upper right')
+    plt.xlabel('Epoch')
+    plt.title(f'Training and Validation Loss (log scale)')
+    
+    #plt.savefig(f'plots/loss_{model_name}_r{run_idx}.jpg')
+    plt.show()
 
 ss = StandardScaler()
 X_train_std = ss.fit_transform(X_train)
@@ -92,11 +149,13 @@ nn.add(layers.Dense(12, input_shape=(4,)))
 nn.add(layers.Dense(12, activation='sigmoid'))
 nn.add(layers.Dense(12, activation='relu'))
 nn.add(layers.Dense(3, activation='softmax'))
+nn.summary()
 
 adam = optimizers.Adam(learning_rate=0.01)
-early_stop = callbacks.EarlyStopping(patience=1000, restore_best_weights=True)
+early_stop = callbacks.EarlyStopping(patience=50, restore_best_weights=True)
 nn.compile(optimizer=adam, loss='categorical_crossentropy')
-hist = nn.fit(X_train_std, y_train_ohe, epochs=400, batch_size=4, validation_split=0.2,
-    callbacks=[early_stop], verbose=1)
+hist = nn.fit(X_train_std, y_train_ohe, epochs=400, batch_size=4,
+    validation_split=0.2, callbacks=[early_stop], verbose=0)
+plot_log_losses(hist.history)
 nn_pred = ohe.inverse_transform(nn.predict(X_test_std))
 evaluate(y_test=y_test, y_pred=nn_pred)
