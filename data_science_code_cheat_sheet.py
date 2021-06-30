@@ -7,6 +7,25 @@ from seaborn.palettes import dark_palette
 def all_but(all_columns, left_out):
     return [c for c in all_columns if c not in left_out]
 
+def feature_decomp(df): # separate continuous, binary and categorical features
+
+    dtypes = df.dtypes
+    ft_decomp = {'continuous': [], 'categorical': [], 'binary': [], 'others': []}
+    for c in df.columns:
+        if dtypes[c] in ('float64', 'int64'):
+            uniques_set = set(df[c].unique())
+            if uniques_set == set([0, 1]):
+                ft_decomp['binary'].append(c)
+            else:
+                ft_decomp['continuous'].append(c)
+        elif dtypes[c] == 'object':
+            ft_decomp['categorical'].append(c)
+        else:
+            ft_decomp['others'].append(c)
+
+    return ft_decomp
+
+
 # 0. DATASET
 from sklearn.datasets import load_boston
 boston_import = load_boston()
@@ -45,16 +64,14 @@ for c in X.columns:
 from sklearn.model_selection import train_test_split
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-from sklearn.compose import ColumnTransformer, make_column_selector
+from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 
+ft_decomp = feature_decomp(X_train)
 transformers = [
-    ('standard_scaler', StandardScaler(), 
-        make_column_selector(pattern=r'^(?!CHAS).+', dtype_exclude=object)),
-    ('ohe', OneHotEncoder(), 
-        make_column_selector(dtype_include=object)),
-    ('binary', 'passthrough', ['CHAS'])]
-
+    ('standard_scaler', StandardScaler(), ft_decomp['continuous']),
+    ('ohe', OneHotEncoder(), ft_decomp['categorical']),
+    ('passthrough', 'passthrough', ft_decomp['binary']+ft_decomp['others'])]
 ct = ColumnTransformer(transformers)
 X_train = ct.fit_transform(X_train)
 X_test = ct.transform(X_test)
