@@ -129,12 +129,9 @@ rf_pred = rf.predict(X_test)
 reg_evaluate(y_test=y_test, y_pred=rf_pred)
 
 # XGBoost
-from xgboost import XGBClassifier
+from xgboost import XGBRegressor
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import GridSearchCV 
-
-le = LabelEncoder() 
-y_train_le = le.fit_transform(y_train)
 
 param_grid = {
     'gamma': [0.1, 0.2, 0.3],
@@ -144,57 +141,47 @@ param_grid = {
     }
 
 xgb = GridSearchCV(
-    estimator=XGBClassifier(use_label_encoder=False), 
+    estimator=XGBRegressor(), 
     param_grid=param_grid, cv=5)
-xgb.fit(X_train, y_train_le, eval_metric='mlogloss')
+xgb.fit(X_train, y_train)
 cv_results = pd.DataFrame(xgb.cv_results_)
 cv_results.loc[:,
     [c for c in cv_results.columns if c[0:6]=='param_'] +
     ['mean_test_score', 'std_test_score']]
-xgb_pred = le.inverse_transform(xgb.predict(X_test))
-evaluate(y_test=y_test, y_pred=xgb_pred)
+xgb_pred = xgb.predict(X_test)
+reg_evaluate(y_test=y_test, y_pred=xgb_pred)
 
 # Neural Network
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from tensorflow.keras import Sequential, layers, optimizers, callbacks
 
-def plot_log_losses(history):
+def plot_losses(history):
     loss = np.array(history['loss'])
     val_loss = np.array(history['val_loss'])
-
     epochs = np.array(range(1, len(loss) + 1))
 
-    plt.plot(epochs, np.log(loss+10e-10), label='Training Loss') # smooth for 0
-    plt.plot(epochs, np.log(val_loss+10e-10), label='Validation Loss')
+    plt.plot(epochs, loss, label='Training Loss')
+    plt.plot(epochs, val_loss, label='Validation Loss')
     plt.legend(loc='upper right')
     plt.xlabel('Epoch')
-    plt.title(f'Training and Validation Loss (log scale)')
-    
-    #plt.savefig(f'plots/loss_{model_name}_r{run_idx}.jpg')
+    plt.title(f'Training and Validation Loss')
     plt.show()
 
-ss = StandardScaler()
-X_train_std = ss.fit_transform(X_train)
-X_test_std = ss.transform(X_test)
-ohe = OneHotEncoder()
-y_train_ohe = ohe.fit_transform(y_train.values.reshape(-1, 1)).toarray()
-y_test_ohe = ohe.transform(y_test.values.reshape(-1, 1)).toarray()
-
-nn = Sequential()
-nn.add(layers.Dense(12, input_shape=(4,)))
-nn.add(layers.Dense(12, activation='sigmoid'))
-nn.add(layers.Dense(12, activation='relu'))
-nn.add(layers.Dense(3, activation='softmax'))
-nn.summary()
+reg_nn = Sequential(name='reg_nn')
+reg_nn.add(layers.Dense(16, input_shape=(16,)))
+reg_nn.add(layers.Dense(32, activation='sigmoid'))
+reg_nn.add(layers.Dense(16, activation='relu'))
+reg_nn.add(layers.Dense(1, activation='linear'))
+reg_nn.summary()
 
 adam = optimizers.Adam(learning_rate=0.01)
 early_stop = callbacks.EarlyStopping(patience=50, restore_best_weights=True)
-nn.compile(optimizer=adam, loss='categorical_crossentropy')
-hist = nn.fit(X_train_std, y_train_ohe, epochs=400, batch_size=4,
+reg_nn.compile(optimizer=adam, loss='mean_squared_error')
+hist = reg_nn.fit(X_train, y_train, epochs=400, batch_size=4,
     validation_split=0.2, callbacks=[early_stop], verbose=0)
-plot_log_losses(hist.history)
-nn_pred = ohe.inverse_transform(nn.predict(X_test_std))
-evaluate(y_test=y_test, y_pred=nn_pred)
+plot_losses(hist.history)
+reg_nn_pred = reg_nn.predict(X_test)
+reg_evaluate(y_test=y_test, y_pred=reg_nn_pred)
+
 
 # --- --- CLASSIFICATION PROBLEM
 
