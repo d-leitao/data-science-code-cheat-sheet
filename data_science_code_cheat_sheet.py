@@ -60,7 +60,7 @@ for c in X.columns:
 
 # --- 1.2 SUPERVISED METHODS
 
-# Split and Preprocessing
+# ------ 1.2.1 Split and Preprocessing
 from sklearn.model_selection import train_test_split
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
@@ -104,8 +104,7 @@ def reg_evaluate(y_test, y_pred):
     plt.title('Test set results')
     plt.show()
 
-
-# Supervised Learning Models
+# ------ 1.2.2 Supervised Learning Models
 
 # Linear Regression
 from sklearn.linear_model import LinearRegression
@@ -183,10 +182,10 @@ reg_nn_pred = reg_nn.predict(X_test)
 reg_evaluate(y_test=y_test, y_pred=reg_nn_pred)
 
 
-# --- --- CLASSIFICATION PROBLEM
+# 2. CLASSIFICATION PROBLEM
 
 
-# --- EXPLORATORY DATA ANALYSIS & UNSUPERVISED METHODS
+# --- 2.1 EXPLORATORY DATA ANALYSIS & UNSUPERVISED METHODS
 
 import matplotlib.pyplot as plt
 import seaborn as sns
