@@ -1,30 +1,31 @@
 import numpy as np
 import pandas as pd
-from seaborn.palettes import dark_palette
 from time import time
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 # -1. CUSTOM FUNCTIONS
 
 def all_but(all_columns, left_out):
     return [c for c in all_columns if c not in left_out]
 
-def feature_decomp(df): # separate continuous, binary and categorical features
+def ft_decomp(df): # separate continuous, binary and categorical features
 
     dtypes = df.dtypes
-    ft_decomp = {'continuous': [], 'categorical': [], 'binary': [], 'others': []}
+    decomp = {'continuous': [], 'categorical': [], 'binary': [], 'others': []}
     for c in df.columns:
         if dtypes[c] in ('float64', 'int64'):
             uniques_set = set(df[c].unique())
             if uniques_set == set([0, 1]):
-                ft_decomp['binary'].append(c)
+                decomp['binary'].append(c)
             else:
-                ft_decomp['continuous'].append(c)
+                decomp['continuous'].append(c)
         elif dtypes[c] == 'object':
-            ft_decomp['categorical'].append(c)
+            decomp['categorical'].append(c)
         else:
-            ft_decomp['others'].append(c)
+            decomp['others'].append(c)
 
-    return ft_decomp
+    return decomp
 
 
 # 0. DATASET
@@ -36,24 +37,22 @@ X['CAT'] = np.random.choice( # categorical noise
     size=X.shape[0],
     p=[1/3, 1/3, 1/3])
 y = pd.Series(boston_import['target'], name='MEDV')
-df = pd.concat([X, y], axis=1)
+data = pd.concat([X, y], axis=1)
+
 
 # 1. REGRESSION PROBLEM
 
 # --- 1.1 EXPLORATORY DATA ANALYSIS & UNSUPERVISED METHODS
 
-df.describe()
-
-import matplotlib.pyplot as plt
-import seaborn as sns
+data.describe()
 
 # Target variable distribution
-sns.histplot(x=df['MEDV'])
+sns.histplot(x=data['MEDV'])
 plt.title('Histogram of House Median Value')
 plt.xlabel('MEDV')
 plt.show()
 
-# Feature statistics by class
+# Scatterplots between each feature and the target
 for c in X.columns:
     sns.scatterplot(x=X[c], y=y)
     plt.show()
@@ -63,20 +62,22 @@ for c in X.columns:
 
 # ------ 1.2.1 Split and Preprocessing
 from sklearn.model_selection import train_test_split
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42)
 
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 
-ft_decomp = feature_decomp(X_train)
+decomp = ft_decomp(X_train)
 transformers = [
-    ('standard_scaler', StandardScaler(), ft_decomp['continuous']),
-    ('ohe', OneHotEncoder(), ft_decomp['categorical']),
-    ('passthrough', 'passthrough', ft_decomp['binary']+ft_decomp['others'])]
+    ('standard_scaler', StandardScaler(), decomp['continuous']),
+    ('ohe', OneHotEncoder(), decomp['categorical']),
+    ('passthrough', 'passthrough', decomp['binary']+decomp['others'])]
 ct = ColumnTransformer(transformers)
 X_train = ct.fit_transform(X_train)
 X_test = ct.transform(X_test)
 
+# ------ 1.2.2 Evaluation Metrics
 from sklearn import metrics
 def reg_evaluate(y_test, y_pred):
 
@@ -105,7 +106,7 @@ def reg_evaluate(y_test, y_pred):
     for m in rec_metrics:
         print(f'{m} = {round(rec_metrics[m], 4)}')
 
-# ------ 1.2.2 Supervised Learning Models
+# ------ 1.2.3 Supervised Learning Models
 
 print('\nLinear Regression')
 from sklearn.linear_model import LinearRegression
@@ -141,7 +142,7 @@ param_grid = {
     }
 
 xgb = GridSearchCV(
-    estimator=XGBRegressor(), 
+    estimator=XGBRegressor(objective='reg:squarederror'), 
     param_grid=param_grid, cv=5)
 xgb.fit(X_train, y_train)
 cv_results = pd.DataFrame(xgb.cv_results_)
@@ -162,7 +163,7 @@ def plot_losses(history):
     log_val_loss = np.log(val_loss)
     epochs = np.array(range(1, len(loss) + 1))
 
-    fig, axs = plt.subplots(1, 2, figsize=(11, 5))
+    fig, axs = plt.subplots(1, 2, figsize=(10, 4))
     axs[0].plot(epochs, loss, label='training loss')
     axs[0].plot(epochs, val_loss, label='validation loss')
     axs[0].legend(loc='upper right')
@@ -175,9 +176,9 @@ def plot_losses(history):
     plt.show()
 
 reg_nn = Sequential(name='reg_nn')
-reg_nn.add(layers.Dense(16, input_shape=(16,)))
-reg_nn.add(layers.Dense(16, activation='relu'))
-reg_nn.add(layers.Dense(16, activation='relu'))
+reg_nn.add(layers.Dense(16, input_shape=(16,)), activation='sigmoid')
+reg_nn.add(layers.Dense(16, activation='sigmoid'))
+reg_nn.add(layers.Dense(16, activation='sigmoid'))
 reg_nn.add(layers.Dense(1, activation='linear'))
 reg_nn.summary()
 
@@ -197,29 +198,49 @@ reg_evaluate(y_test=y_test, y_pred=reg_nn_pred)
 
 # 2. CLASSIFICATION PROBLEM
 
+# adapting the problem to classification
+def class_func(x):
+    if x < 20:
+        o = 'low'
+    elif x < 40:
+        o = 'medium'
+    else:
+        o = 'high'
+
+    return o
+category = data['MEDV'].apply(class_func).rename('category')
+data['category'] = category
+X = data.iloc[:,:-2]
+y = data.loc[:,'category'].rename('y') # leaving 'MEDV' out
+
 
 # --- 2.1 EXPLORATORY DATA ANALYSIS & UNSUPERVISED METHODS
 
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-'''
 # Class counts
 sns.countplot(x=y)
-plt.title('Class Frequency')
-plt.xlabel('class')
+plt.title('Class frequency')
+plt.ylabel('Count')
+plt.xlabel('Class')
 plt.show()
-'''
 
 # Feature statistics by class
-class_stats = df.groupby('y').agg(['mean', 'std']).T
+class_stats = data.groupby('category').agg(['mean', 'std']).T
 class_stats.columns.name = 'feature'
 class_stats
 
-# Principal Component Analysis
+# Principal Component Analysis (standardized)
+from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
-pca = PCA(n_components=2)
-X_PCA = pd.DataFrame(pca.fit_transform(X))
+from sklearn.pipeline import Pipeline
+
+pca_std = Pipeline([
+    ('scaling', StandardScaler()),
+    ('pca', PCA(n_components=2))])
+cont_cols = ft_decomp(X)['continuous']
+X_PCA = pd.DataFrame(pca_std.fit_transform(X[cont_cols]))
 X_PCA.columns = ['PC'+str(n+1) for n in range(X_PCA.shape[1])]
 
 # 2D Scatter Plot
@@ -234,21 +255,45 @@ plt.show()
 # Clustering
 from sklearn.cluster import KMeans
 k_means = KMeans(n_clusters=3)
-k_means_clusters = k_means.fit_predict(X)
+k_means_clusters = k_means.fit_predict(X[cont_cols])
 
-# todo develop this
+# todo clustering evaluation
 
-# --- SUPERVISED METHODS
 
-# Split and Evaluation Function
+# --- 2.2 SUPERVISED METHODS
+
+# ------ 2.2.1 Split and Preprocessing
 from sklearn.model_selection import train_test_split
 X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.25, stratify=y)
+    X, y, test_size=0.2, stratify=y, random_state=42)
 
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+
+# trees are scale invariant, but neural networks require standardization
+# in theory, trees do use (non-binary) categorical features
+# however, sklearn's and xgboost's implementations in python do not support this
+
+decomp = ft_decomp(X_train)
+transformers = [
+    ('standard_scaler', StandardScaler(), decomp['continuous']),
+    ('ohe', OneHotEncoder(), decomp['categorical']),
+    ('passthrough', 'passthrough', decomp['binary']+decomp['others'])]
+ct = ColumnTransformer(transformers)
+X_train = ct.fit_transform(X_train)
+X_test = ct.transform(X_test)
+
+# ------ 2.2.2 Evaluation Metrics
 from sklearn import metrics
-def evaluate(y_test, y_pred):
+def clf_evaluate(y_test, y_pred):
 
     sorted_labels = sorted(y_test.unique())
+
+    # confusion matrix
+    cm = metrics.confusion_matrix(y_test, y_pred, labels=sorted_labels)
+    metrics.ConfusionMatrixDisplay(cm, display_labels=sorted_labels).plot()
+    plt.title('Confusion Matrix')
+    plt.show()
 
     freqs = [sum(y_test==l)/len(y_test) for l in sorted_labels]
     accs = metrics.confusion_matrix(y_test, y_pred, labels=sorted_labels,
@@ -257,8 +302,10 @@ def evaluate(y_test, y_pred):
     recs = metrics.recall_score(y_test, y_pred, labels=sorted_labels, average=None)
 
     res = pd.DataFrame([freqs, accs, precs, recs],
-        index=['Frequency', 'Accuracy', 'Precision', 'Recall']).T
+        index=['Frequency', 'Accuracy', 'Precision', 'Recall'],
+        columns=sorted_labels).T
     res.index.name = 'True Class'
+    res = res.sort_values(by='Frequency', ascending=False)
     
     avgs = res.mean(axis=0)
     weighted_avgs = [res.iloc[:,i].dot(res.iloc[:,0]) for i in range(res.shape[1])]
@@ -267,24 +314,20 @@ def evaluate(y_test, y_pred):
         .append(pd.Series(weighted_avgs, index=res.columns, name='Weighted Average'))
         .round(4))
     res.loc[['Class Average', 'Weighted Average'],'Frequency'] = '-'
+    
+    print(f'\nAccuracy = {round(res.loc["Weighted Average", "Accuracy"], 4)}')
+    print('\n', res)
 
-    print(res, end='\n\n')
+# ------ 2.2.3 Supervised Learning Models
 
-    cm = metrics.confusion_matrix(y_test, y_pred, labels=sorted_labels)
-    metrics.ConfusionMatrixDisplay(cm, display_labels=sorted_labels).plot()
-    plt.title('Confusion Matrix')
-    plt.show()
-
-# Supervised Learning Models
-
-# Random Forest
+print('\nRandom Forest')
 from sklearn.ensemble import RandomForestClassifier
-rf = RandomForestClassifier(n_estimators=200)
+rf = RandomForestClassifier(n_estimators=200, criterion='gini')
 rf.fit(X_train, y_train)
 rf_pred = rf.predict(X_test)
-evaluate(y_test=y_test, y_pred=rf_pred)
+clf_evaluate(y_test=y_test, y_pred=rf_pred)
 
-# XGBoost
+print('\nXGBoost')
 from xgboost import XGBClassifier
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import GridSearchCV 
@@ -302,52 +345,54 @@ param_grid = {
 xgb = GridSearchCV(
     estimator=XGBClassifier(use_label_encoder=False), 
     param_grid=param_grid, cv=5)
-xgb.fit(X_train, y_train_le, eval_metric='mlogloss')
+xgb.fit(X_train, y_train_le, eval_metric='mlogloss') # 'merror' for binary clf
 cv_results = pd.DataFrame(xgb.cv_results_)
 cv_results.loc[:,
     [c for c in cv_results.columns if c[0:6]=='param_'] +
     ['mean_test_score', 'std_test_score']]
 xgb_pred = le.inverse_transform(xgb.predict(X_test))
-evaluate(y_test=y_test, y_pred=xgb_pred)
+clf_evaluate(y_test=y_test, y_pred=xgb_pred)
 
-# Neural Network
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
+print('\nNeural Network')
 from tensorflow.keras import Sequential, layers, optimizers, callbacks
 
-def plot_log_losses(history):
+def plot_losses(history):
+    
     loss = np.array(history['loss'])
     val_loss = np.array(history['val_loss'])
-
+    log_loss = np.log(loss)
+    log_val_loss = np.log(val_loss)
     epochs = np.array(range(1, len(loss) + 1))
 
-    plt.plot(epochs, np.log(loss+10e-10), label='Training Loss') # smooth for 0
-    plt.plot(epochs, np.log(val_loss+10e-10), label='Validation Loss')
-    plt.legend(loc='upper right')
-    plt.xlabel('Epoch')
-    plt.title(f'Training and Validation Loss (log scale)')
-    
-    #plt.savefig(f'plots/loss_{model_name}_r{run_idx}.jpg')
+    fig, axs = plt.subplots(1, 2, figsize=(10, 4))
+    axs[0].plot(epochs, loss, label='training loss')
+    axs[0].plot(epochs, val_loss, label='validation loss')
+    axs[0].legend(loc='upper right')
+    axs[0].set_xlabel('epoch')
+
+    axs[1].plot(epochs, log_loss, label='training log loss')
+    axs[1].plot(epochs, log_val_loss, label='validation log loss')
+    axs[1].legend(loc='upper right')
+    axs[1].set_xlabel('epoch')
     plt.show()
 
-ss = StandardScaler()
-X_train_std = ss.fit_transform(X_train)
-X_test_std = ss.transform(X_test)
+# X is already scaled and one-hot-encoded (categ. features)
+# however, y must be one-hot-encoded for the softmax layer
 ohe = OneHotEncoder()
 y_train_ohe = ohe.fit_transform(y_train.values.reshape(-1, 1)).toarray()
-y_test_ohe = ohe.transform(y_test.values.reshape(-1, 1)).toarray()
 
-nn = Sequential()
-nn.add(layers.Dense(12, input_shape=(4,)))
-nn.add(layers.Dense(12, activation='sigmoid'))
-nn.add(layers.Dense(12, activation='relu'))
-nn.add(layers.Dense(3, activation='softmax'))
-nn.summary()
+clf_nn = Sequential(name='clf_nn')
+clf_nn.add(layers.Dense(16, activation='relu', input_shape=(16,)))
+clf_nn.add(layers.Dense(16, activation='relu'))
+clf_nn.add(layers.Dense(3, activation='softmax'))
+clf_nn.summary()
 
 adam = optimizers.Adam(learning_rate=0.01)
 early_stop = callbacks.EarlyStopping(patience=50, restore_best_weights=True)
-nn.compile(optimizer=adam, loss='categorical_crossentropy')
-hist = nn.fit(X_train_std, y_train_ohe, epochs=400, batch_size=4,
-    validation_split=0.2, callbacks=[early_stop], verbose=0)
-plot_log_losses(hist.history)
-nn_pred = ohe.inverse_transform(nn.predict(X_test_std))
-evaluate(y_test=y_test, y_pred=nn_pred)
+clf_nn.compile(optimizer=adam, loss='categorical_crossentropy')
+hist = clf_nn.fit(verbose=0,
+    x=X_train, y=y_train_ohe, epochs=400, batch_size=8, callbacks=[early_stop],
+    validation_split=0.2, shuffle=False) # already shuffled, reproducible
+plot_losses(hist.history)
+clf_nn_pred = ohe.inverse_transform(clf_nn.predict(X_test))
+clf_evaluate(y_test=y_test, y_pred=clf_nn_pred)
