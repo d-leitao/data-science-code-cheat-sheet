@@ -176,7 +176,7 @@ def plot_losses(history):
     plt.show()
 
 reg_nn = Sequential(name='reg_nn')
-reg_nn.add(layers.Dense(16, input_shape=(16,)), activation='sigmoid')
+reg_nn.add(layers.Dense(16, activation='sigmoid', input_shape=(16,)))
 reg_nn.add(layers.Dense(16, activation='sigmoid'))
 reg_nn.add(layers.Dense(16, activation='sigmoid'))
 reg_nn.add(layers.Dense(1, activation='linear'))

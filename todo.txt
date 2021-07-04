@@ -1,3 +1,2 @@
 add metrics recording (object?) and show table
 autoencoder
-linear regression coef. plots
