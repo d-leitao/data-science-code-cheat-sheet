@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from seaborn.palettes import dark_palette
+from time import time
 
 # -1. CUSTOM FUNCTIONS
 
@@ -79,55 +80,55 @@ X_test = ct.transform(X_test)
 from sklearn import metrics
 def reg_evaluate(y_test, y_pred):
 
-    rec_metrics = dict()
+    # true vs predicted plot
+    fig, ax = plt.subplots()
+    ax.scatter(y_test, y_pred, s=10)
+    lims = [
+        np.min([ax.get_xlim(), ax.get_ylim()]),  # min of both axes
+        np.max([ax.get_xlim(), ax.get_ylim()])]  # max of both axes
 
-    rec_metrics['R-squared'] = metrics.r2_score(y_test, y_pred)
+    ax.plot(lims, lims, 'k-', alpha=0.75, zorder=0)
+    ax.set_aspect('equal')
+    ax.set_xlim(lims)
+    ax.set_ylim(lims)
+    plt.xlabel('True')
+    plt.ylabel('Predicted')
+    plt.title('Test set results')
+    plt.show()
+
+    # eval metrics
+    rec_metrics = dict()
+    rec_metrics['R-Squared'] = metrics.r2_score(y_test, y_pred)
     rec_metrics['MAE'] = metrics.mean_absolute_error(y_test, y_pred)
     rec_metrics['MSE'] = metrics.mean_squared_error(y_test, y_pred)
 
     for m in rec_metrics:
         print(f'{m} = {round(rec_metrics[m], 4)}')
 
-    fig, ax = plt.subplots()
-    ax.scatter(y_test, y_pred, s=10)
-    lims = [
-        np.min([ax.get_xlim(), ax.get_ylim()]),  # min of both axes
-        np.max([ax.get_xlim(), ax.get_ylim()]),  # max of both axes
-    ]
-
-    ax.plot(lims, lims, 'k-', alpha=0.75, zorder=0)
-    ax.set_aspect('equal')
-    ax.set_xlim(lims)
-    ax.set_ylim(lims)
-    plt.xlabel('true')
-    plt.ylabel('predicted')
-    plt.title('Test set results')
-    plt.show()
-
 # ------ 1.2.2 Supervised Learning Models
 
-# Linear Regression
+print('\nLinear Regression')
 from sklearn.linear_model import LinearRegression
 lr = LinearRegression()
 lr.fit(X_train, y_train)
 lr_pred = lr.predict(X_test)
 reg_evaluate(y_test, lr_pred)
 
-# Lasso
+print('\nLasso')
 from sklearn.linear_model import LassoCV
 lasso = LassoCV(cv=5)
 lasso.fit(X_train, y_train)
 lasso_pred = lasso.predict(X_test)
 reg_evaluate(y_test, lasso_pred)
 
-# Random Forest
+print('\nRandom Forest')
 from sklearn.ensemble import RandomForestRegressor
-rf = RandomForestRegressor(n_estimators=200)
+rf = RandomForestRegressor(n_estimators=200, criterion='mse')
 rf.fit(X_train, y_train)
 rf_pred = rf.predict(X_test)
 reg_evaluate(y_test=y_test, y_pred=rf_pred)
 
-# XGBoost
+print('\nXGBoost')
 from xgboost import XGBRegressor
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import GridSearchCV 
@@ -150,24 +151,32 @@ cv_results.loc[:,
 xgb_pred = xgb.predict(X_test)
 reg_evaluate(y_test=y_test, y_pred=xgb_pred)
 
-# Neural Network
+print('\nNeural Network')
 from tensorflow.keras import Sequential, layers, optimizers, callbacks
 
 def plot_losses(history):
+    
     loss = np.array(history['loss'])
     val_loss = np.array(history['val_loss'])
+    log_loss = np.log(loss)
+    log_val_loss = np.log(val_loss)
     epochs = np.array(range(1, len(loss) + 1))
 
-    plt.plot(epochs, loss, label='Training Loss')
-    plt.plot(epochs, val_loss, label='Validation Loss')
-    plt.legend(loc='upper right')
-    plt.xlabel('Epoch')
-    plt.title(f'Training and Validation Loss')
+    fig, axs = plt.subplots(1, 2, figsize=(11, 5))
+    axs[0].plot(epochs, loss, label='training loss')
+    axs[0].plot(epochs, val_loss, label='validation loss')
+    axs[0].legend(loc='upper right')
+    axs[0].set_xlabel('epoch')
+
+    axs[1].plot(epochs, log_loss, label='training log loss')
+    axs[1].plot(epochs, log_val_loss, label='validation log loss')
+    axs[1].legend(loc='upper right')
+    axs[1].set_xlabel('epoch')
     plt.show()
 
 reg_nn = Sequential(name='reg_nn')
 reg_nn.add(layers.Dense(16, input_shape=(16,)))
-reg_nn.add(layers.Dense(32, activation='sigmoid'))
+reg_nn.add(layers.Dense(16, activation='relu'))
 reg_nn.add(layers.Dense(16, activation='relu'))
 reg_nn.add(layers.Dense(1, activation='linear'))
 reg_nn.summary()
@@ -175,8 +184,12 @@ reg_nn.summary()
 adam = optimizers.Adam(learning_rate=0.01)
 early_stop = callbacks.EarlyStopping(patience=50, restore_best_weights=True)
 reg_nn.compile(optimizer=adam, loss='mean_squared_error')
-hist = reg_nn.fit(X_train, y_train, epochs=400, batch_size=4,
-    validation_split=0.2, callbacks=[early_stop], verbose=0)
+s = time()
+hist = reg_nn.fit(verbose=0,
+    x=X_train, y=y_train, epochs=400, batch_size=8, callbacks=[early_stop],
+    validation_split=0.2, shuffle=False) # already shuffled, reproducible
+t = time() - s
+print(f'Training time: {round(t, 0)}s ({round(t/60, 2)}m)')
 plot_losses(hist.history)
 reg_nn_pred = reg_nn.predict(X_test)
 reg_evaluate(y_test=y_test, y_pred=reg_nn_pred)
