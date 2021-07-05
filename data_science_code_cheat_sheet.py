@@ -27,6 +27,26 @@ def ft_decomp(df): # separate continuous, binary and categorical features
 
     return decomp
 
+def plot_losses(history): # neural network training history plotter
+    
+    loss = np.array(history['loss'])
+    val_loss = np.array(history['val_loss'])
+    log_loss = np.log(loss)
+    log_val_loss = np.log(val_loss)
+    epochs = np.array(range(1, len(loss) + 1))
+
+    fig, axs = plt.subplots(1, 2, figsize=(10, 4))
+    axs[0].plot(epochs, loss, label='training loss')
+    axs[0].plot(epochs, val_loss, label='validation loss')
+    axs[0].legend(loc='upper right')
+    axs[0].set_xlabel('epoch')
+
+    axs[1].plot(epochs, log_loss, label='training log loss')
+    axs[1].plot(epochs, log_val_loss, label='validation log loss')
+    axs[1].legend(loc='upper right')
+    axs[1].set_xlabel('epoch')
+    plt.show()
+
 
 # 0. DATASET
 from sklearn.datasets import load_boston
@@ -186,9 +206,9 @@ adam = optimizers.Adam(learning_rate=0.01)
 early_stop = callbacks.EarlyStopping(patience=50, restore_best_weights=True)
 reg_nn.compile(optimizer=adam, loss='mean_squared_error')
 s = time()
-hist = reg_nn.fit(verbose=0,
-    x=X_train, y=y_train, epochs=400, batch_size=8, callbacks=[early_stop],
-    validation_split=0.2, shuffle=False) # already shuffled, reproducible
+hist = reg_nn.fit(
+    x=X_train, y=y_train, epochs=400, batch_size=8,
+    callbacks=[early_stop],validation_split=0.2, verbose=0)
 t = time() - s
 print(f'Training time: {round(t, 0)}s ({round(t/60, 2)}m)')
 plot_losses(hist.history)
@@ -219,19 +239,19 @@ y = data.loc[:,'category'].rename('y') # leaving 'MEDV' out
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-# Class counts
+print('\nClass counts')
 sns.countplot(x=y)
 plt.title('Class frequency')
 plt.ylabel('Count')
 plt.xlabel('Class')
 plt.show()
 
-# Feature statistics by class
+print('\nFeature statistics by class')
 class_stats = data.groupby('category').agg(['mean', 'std']).T
 class_stats.columns.name = 'feature'
 class_stats
 
-# Principal Component Analysis (standardized)
+print('\nPrincipal Component Analysis (standardized)')
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from sklearn.pipeline import Pipeline
@@ -243,7 +263,6 @@ cont_cols = ft_decomp(X)['continuous']
 X_PCA = pd.DataFrame(pca_std.fit_transform(X[cont_cols]))
 X_PCA.columns = ['PC'+str(n+1) for n in range(X_PCA.shape[1])]
 
-# 2D Scatter Plot
 # palettes: https://seaborn.pydata.org/tutorial/color_palettes.html
 sns.scatterplot(
     data=pd.concat((X_PCA, y), axis=1),
@@ -251,6 +270,39 @@ sns.scatterplot(
 plt.title('First two principle components colored by class')
 plt.legend(title='class')
 plt.show()
+
+print('\nAutoencoder')
+from tensorflow.keras import Model, Input, layers, callbacks
+from sklearn.preprocessing import StandardScaler
+
+ss = StandardScaler()
+X_train_ae = ss.fit_transform(X[cont_cols])
+decoded_dim = X_train_ae.shape[1]
+encoded_dim = 2
+input_arr = Input(shape=(decoded_dim,))
+x = layers.Dense(int(decoded_dim/4), activation='sigmoid')(input_arr)
+x = layers.Dense(int(decoded_dim/4), activation='relu')(x)
+encoded = layers.Dense(encoded_dim, activation='linear')(x)
+x = layers.Dense(int(decoded_dim/4), activation='sigmoid')(encoded)
+decoded = layers.Dense(decoded_dim, activation='linear')(x)
+
+autoencoder = Model(input_arr, decoded)
+autoencoder.compile(optimizer='adam', loss='mean_absolute_error')
+early_stop = callbacks.EarlyStopping(patience=100, restore_best_weights=True)
+ae_hist = autoencoder.fit(X_train_ae, X_train_ae, epochs=1000, batch_size=8, 
+    callbacks=[early_stop], validation_split=0.2, verbose=0)
+plot_losses(ae_hist.history)
+
+encoder = Model(input_arr, encoded)
+encoded_arr = encoder.predict(X_train_ae)
+
+sns.scatterplot(
+    data=pd.concat((pd.DataFrame(encoded_arr, columns=['X1', 'X2']), y), axis=1),
+    x='X1', y='X2', hue='y', palette='colorblind')
+plt.title('Autoencoded 2D representation colored by class')
+plt.legend(title='class')
+plt.show()
+
 
 # Clustering
 from sklearn.cluster import KMeans
@@ -356,26 +408,6 @@ clf_evaluate(y_test=y_test, y_pred=xgb_pred)
 print('\nNeural Network')
 from tensorflow.keras import Sequential, layers, optimizers, callbacks
 
-def plot_losses(history):
-    
-    loss = np.array(history['loss'])
-    val_loss = np.array(history['val_loss'])
-    log_loss = np.log(loss)
-    log_val_loss = np.log(val_loss)
-    epochs = np.array(range(1, len(loss) + 1))
-
-    fig, axs = plt.subplots(1, 2, figsize=(10, 4))
-    axs[0].plot(epochs, loss, label='training loss')
-    axs[0].plot(epochs, val_loss, label='validation loss')
-    axs[0].legend(loc='upper right')
-    axs[0].set_xlabel('epoch')
-
-    axs[1].plot(epochs, log_loss, label='training log loss')
-    axs[1].plot(epochs, log_val_loss, label='validation log loss')
-    axs[1].legend(loc='upper right')
-    axs[1].set_xlabel('epoch')
-    plt.show()
-
 # X is already scaled and one-hot-encoded (categ. features)
 # however, y must be one-hot-encoded for the softmax layer
 ohe = OneHotEncoder()
@@ -390,9 +422,9 @@ clf_nn.summary()
 adam = optimizers.Adam(learning_rate=0.01)
 early_stop = callbacks.EarlyStopping(patience=50, restore_best_weights=True)
 clf_nn.compile(optimizer=adam, loss='categorical_crossentropy')
-hist = clf_nn.fit(verbose=0,
-    x=X_train, y=y_train_ohe, epochs=400, batch_size=8, callbacks=[early_stop],
-    validation_split=0.2, shuffle=False) # already shuffled, reproducible
+hist = clf_nn.fit(
+    x=X_train, y=y_train_ohe, epochs=400, batch_size=8,
+    callbacks=[early_stop],validation_split=0.2, verbose=0)
 plot_losses(hist.history)
 clf_nn_pred = ohe.inverse_transform(clf_nn.predict(X_test))
 clf_evaluate(y_test=y_test, y_pred=clf_nn_pred)
