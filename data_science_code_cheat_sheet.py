@@ -59,6 +59,11 @@ X['CAT'] = np.random.choice( # categorical noise
 y = pd.Series(boston_import['target'], name='MEDV')
 data = pd.concat([X, y], axis=1)
 
+# Missing values
+rows_mv = data.isnull().any(axis=1)
+print(data.loc[rows_mv,]) # see rows with missing values
+data = data.loc[~rows_mv,] # remove missing values
+
 
 # 1. REGRESSION PROBLEM
 

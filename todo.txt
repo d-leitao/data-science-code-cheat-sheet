@@ -1,2 +1,1 @@
 add metrics recording (object?) and show table
-autoencoder
